@@ -113,10 +113,36 @@ const Status BufMgr::allocBuf(int & frame)
 	
 const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 {
-
-
-
-
+	Status status;
+	//First check if the method is already in the pool
+	int frameNo;
+	
+	status = hashTable->lookup(file, PageNo, frameNo);
+	BufDesc* curr = &(bufTable[frameNo]);
+	Page* pg = &(bufPool[frameNo]);
+	//Case 1 page is not in the buffer pool
+	if(status == HASHNOTFOUND) {
+		
+		if((status = allocBuf(frameNo)) != OK)
+			return status;
+			
+		curr = &(bufTable[frameNo]);
+		pg = &(bufPool[frameNo]);
+		
+		if((status = file->readPage(PageNo, pg)) != OK)
+			return status;
+			
+		if((status = hashTable->insert(file, PageNo, frameNo)) != OK)
+			return status;
+			
+		curr->Set(file, PageNo);
+		page = pg;
+	}else {
+		curr->refbit = true;
+		curr->pinCnt++;
+		page = pg;
+	}
+	return status;
 
 }
 
