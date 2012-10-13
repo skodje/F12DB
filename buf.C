@@ -68,7 +68,7 @@ const Status BufMgr::allocBuf(int & frame)
 	//Allocate a free frame using the clock algorithm
 	//First follow the clock algorithm
 	bool found = false;
-	BufDesc* curr = (BufDesc*)malloc(sizeof(BufDesc));
+	BufDesc* curr;// = (BufDesc*)malloc(sizeof(BufDesc));
 	Status status;
 	for(int i = 0; i < numBufs && !found; i++) {
 		//First advance the clock pointer:
@@ -91,20 +91,23 @@ const Status BufMgr::allocBuf(int & frame)
 				//Flush page back to disc
 				Page* pg = &(bufPool[clockHand]);
 				int pgnum = curr->pageNo;
+				frame = clockHand;
 				if((status = curr->file->writePage(pgnum, pg)) != OK) 
-					return status;
-			}
-			else {
-				//Need to clear the frame
-				curr->Clear();
-				//Set the frame	
-				curr->Set(NULL, -1);
-			}
+					return status;		
+			}		
+		} else {
+			found = true;
+			frame = clockHand;
+			//Need to clear the frame
+			curr->Clear();
+			//Set the frame	
+			curr->Set(NULL, -1);
 		}
 	}
 	if(!found) {
 		return BUFFEREXCEEDED;
 	}
+	return OK;
 }
 
 	
@@ -121,22 +124,39 @@ const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 const Status BufMgr::unPinPage(File* file, const int PageNo, 
 			       const bool dirty) 
 {
-
-
-
-
-
+	int frameNo;
+	Status status;
+	BufDesc* frame;
+	if((status = hashTable->lookup(file, PageNo, frameNo)) != HASHTBLERROR) {
+		frame = &(bufTable[frameNo]);
+		if(frame->pinCnt <= 0)
+			status = PAGENOTPINNED;
+		else {
+			frame->pinCnt--;
+			if(dirty)
+				frame->dirty = true;
+		}
+	}
+	return status;
 }
 
 const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
 {
-
-
-
-
-
-
-
+	Status status;
+	if((status = file->allocatePage(pageNo)) != OK) {
+		return status;
+	}
+	int frameNo;
+	if((status = allocBuf(frameNo)) != OK) {
+		return status;
+	}
+	if((status = hashTable->insert(file, pageNo, frameNo)) != OK) {
+		return status;
+	}
+	BufDesc* curr = &(bufTable[frameNo]);
+	curr->Set(file, pageNo);
+	page = &(bufPool[frameNo]);
+	return status;
 }
 
 const Status BufMgr::disposePage(File* file, const int pageNo) 
