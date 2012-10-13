@@ -128,6 +128,11 @@ public:
   const Status disposePage(File* file, const int PageNo); // dispose of page in file
   void  printSelf();
 
+	//Test code
+	const void printStatus();
+	//////
+
+
   const BufStats & getBufStats() const // get buffer pool usage
   {
 	return bufStats;
