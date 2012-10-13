@@ -65,12 +65,46 @@ BufMgr::~BufMgr() {
 
 const Status BufMgr::allocBuf(int & frame) 
 {
-
-
-
-
-
-
+	//Allocate a free frame using the clock algorithm
+	//First follow the clock algorithm
+	bool found = false;
+	BufDesc* curr = (BufDesc*)malloc(sizeof(BufDesc));
+	Status status;
+	for(int i = 0; i < numBufs && !found; i++) {
+		//First advance the clock pointer:
+		advanceClock();
+		//Is valid set?
+		curr = &(bufTable[clockHand]);//*(bufTable + clockHand);
+		if(curr->valid) {
+			//Is refbit set?
+			if(curr->refbit) {
+				curr->refbit = false;
+				continue;
+			} 
+			else if (curr->pinCnt > 0) {
+				continue;
+			}
+			else if (curr->dirty) {
+				found = true;
+				//Remove from hash table
+				hashTable->remove(curr->file, curr->pageNo);
+				//Flush page back to disc
+				Page* pg = &(bufPool[clockHand]);
+				int pgnum = curr->pageNo;
+				if((status = curr->file->writePage(pgnum, pg)) != OK) 
+					return status;
+			}
+			else {
+				//Need to clear the frame
+				curr->Clear();
+				//Set the frame	
+				curr->Set(NULL, -1);
+			}
+		}
+	}
+	if(!found) {
+		return BUFFEREXCEEDED;
+	}
 }
 
 	
