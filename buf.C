@@ -68,21 +68,32 @@ const Status BufMgr::allocBuf(int & frame)
 	//Allocate a free frame using the clock algorithm
 	//First follow the clock algorithm
 	bool found = false;
-	BufDesc* curr;// = (BufDesc*)malloc(sizeof(BufDesc));
+	BufDesc* curr;
 	Status status;
-	for(int i = 0; i < numBufs && !found; i++) {
+	
+	//Check if all pages are pinned
+	bool allPagePinned = true;
+	for(int i = 0; i < numBufs && allPagePinned; i++) {
+		curr = &(bufTable[i]);
+		if((curr->pinCnt) <= 0)
+			allPagePinned = false;
+	}
+	if(allPagePinned) {
+		return BUFFEREXCEEDED;
+	}
+	while(!found) {
 		//First advance the clock pointer:
 		advanceClock();
+		curr = &(bufTable[clockHand]);
 		//Is valid set?
-		curr = &(bufTable[clockHand]);//*(bufTable + clockHand);
 		if(curr->valid) {
 			//Is refbit set?
 			if(curr->refbit) {
 				curr->refbit = false;
-				continue;
 			} 
+			//Is it pinned?
 			else if (curr->pinCnt > 0) {
-				continue;
+				
 			}
 			else if (curr->dirty) {
 				found = true;
@@ -91,23 +102,33 @@ const Status BufMgr::allocBuf(int & frame)
 				//Flush page back to disc
 				Page* pg = &(bufPool[clockHand]);
 				int pgnum = curr->pageNo;
-				frame = clockHand;
 				if((status = curr->file->writePage(pgnum, pg)) != OK) 
-					return status;		
-			}		
-		} else {
+					return status;				
+			} else {
+				//It's valid and not dirty, so remove from hash and clear frame
+				hashTable->remove(curr->file, curr->pageNo);
+				found = true;
+			}	
+		} 
+		else {
 			found = true;
 			frame = clockHand;
 			//Need to clear the frame
 			curr->Clear();
-			//Set the frame	
-			curr->Set(NULL, -1);
+		}
+		if (found) {
+			frame = clockHand;
+			curr->Clear();
 		}
 	}
-	if(!found) {
-		return BUFFEREXCEEDED;
-	}
 	return OK;
+}
+const void BufMgr::printStatus() {
+	BufDesc* curr;
+	for(int i = 0; i < numBufs; i++) {
+		curr = &(bufTable[i]);
+		cout << "Item "<< i <<": PinCnt: " << curr->pinCnt << ", Refbit = " << curr->refbit << endl;	
+	}
 }
 
 	
@@ -116,13 +137,11 @@ const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 	Status status;
 	//First check if the method is already in the pool
 	int frameNo;
-	
 	status = hashTable->lookup(file, PageNo, frameNo);
 	BufDesc* curr = &(bufTable[frameNo]);
 	Page* pg = &(bufPool[frameNo]);
 	//Case 1 page is not in the buffer pool
 	if(status == HASHNOTFOUND) {
-		
 		if((status = allocBuf(frameNo)) != OK)
 			return status;
 			
